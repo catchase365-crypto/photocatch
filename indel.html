@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>像素化生成器</title>
+    <style>
+        :root {
+            /* 默认值，会被JS覆盖 */
+            --grid-size: 50; 
+            --pixel-size: 1.5vw;
+            --pixel-max-size: 12px;
+            --pixel-gap: 0.3vw;
+            --pixel-max-gap: 3px;
+            --background-color: #0a0a0a;
+            --pixel-off-color: #1a1a1a;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: var(--background-color);
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow-x: hidden;
+            text-align: center;
+            padding: 1rem;
+        }
+
+        .controls-container {
+            margin-bottom: 2rem;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        .controls-container h1 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            letter-spacing: 2px;
+            margin: 0;
+        }
+
+        .controls-container p {
+            font-size: 1rem;
+            color: #888;
+            margin-top: 0.5rem;
+        }
+
+        .control-section {
+            margin-top: 1.5rem;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1rem;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        }
+
+        #randomizeBtn {
+            background-image: linear-gradient(45deg, #8a2be2, #4169e1);
+        }
+        
+        #randomizeBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(138, 43, 226, 0.5);
+        }
+        
+        #uploadBtn {
+            background-image: linear-gradient(45deg, #43e97b, #38f9d7);
+        }
+
+        #uploadBtn:hover {
+             transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(67, 233, 123, 0.5);
+        }
+
+        .resolution-btn {
+            background: #333;
+        }
+
+        .resolution-btn.active {
+            background-image: linear-gradient(45deg, #ff9a9e, #fad0c4);
+            color: #333;
+            font-weight: bold;
+            box-shadow: 0 6px 20px rgba(255, 154, 158, 0.5);
+        }
+
+        .save-btn {
+            background-image: linear-gradient(45deg, #FF6B6B, #F8B400);
+        }
+        .save-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.5);
+        }
+
+        .light-grid {
+            display: grid;
+            grid-template-columns: repeat(var(--grid-size), min(var(--pixel-size), var(--pixel-max-size)));
+            grid-template-rows: repeat(var(--grid-size), min(var(--pixel-size), var(--pixel-max-size)));
+            gap: min(var(--pixel-gap), var(--pixel-max-gap));
+            padding: 20px;
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 20px;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease-in-out;
+        }
+
+        .pixel {
+            width: min(var(--pixel-size), var(--pixel-max-size));
+            height: min(var(--pixel-size), var(--pixel-max-size));
+            background-color: var(--pixel-off-color);
+            border-radius: 4px;
+            transition: background-color 0.5s ease;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="controls-container">
+        <h1>像素化生成器</h1>
+        <p>上传图片或随机生成一个像素画</p>
+        <div class="control-section">
+            <button id="randomizeBtn" class="btn">随机配色</button>
+            <button id="uploadBtn" class="btn">上传图片</button>
+        </div>
+        <div class="control-section" id="resolution-controls">
+             <button class="btn resolution-btn" data-size="10">10x10</button>
+             <button class="btn resolution-btn" data-size="25">25x25</button>
+             <button class="btn resolution-btn active" data-size="50">50x50</button>
+             <button class="btn resolution-btn" data-size="100">100x100</button>
+        </div>
+        <div class="control-section">
+            <button id="savePngWithBgBtn" class="btn save-btn">保存PNG (含背景)</button>
+            <button id="savePngNoBgBtn" class="btn save-btn">保存PNG (无背景)</button>
+        </div>
+    </div>
+    
+    <input type="file" id="imageUploader" accept="image/*" style="display: none;">
+    <div class="light-grid"></div>
+
+    <script>
+        const gridContainer = document.querySelector('.light-grid');
+        const randomizeBtn = document.getElementById('randomizeBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const imageUploader = document.getElementById('imageUploader');
+        const resolutionControls = document.getElementById('resolution-controls');
+        const savePngWithBgBtn = document.getElementById('savePngWithBgBtn');
+        const savePngNoBgBtn = document.getElementById('savePngNoBgBtn');
+
+        let GRID_SIZE = 50;
+        let PIXEL_COUNT = GRID_SIZE * GRID_SIZE;
+        let DIAGONAL_COUNT = GRID_SIZE * 2 - 1;
+        let pixels = [];
+        let pixelBaseColors = [];
+        
+        /**
+         * 根据尺寸重建网格
+         */
+        function rebuildGrid(newSize) {
+            GRID_SIZE = newSize;
+            PIXEL_COUNT = GRID_SIZE * GRID_SIZE;
+            DIAGONAL_COUNT = GRID_SIZE * 2 - 1;
+            
+            // 更新CSS变量以调整网格和像素大小
+            const root = document.documentElement;
+            root.style.setProperty('--grid-size', GRID_SIZE);
+            if (GRID_SIZE === 10) {
+                root.style.setProperty('--pixel-size', '4vw');
+                root.style.setProperty('--pixel-max-size', '40px');
+                root.style.setProperty('--pixel-gap', '1vw');
+                root.style.setProperty('--pixel-max-gap', '10px');
+            } else if (GRID_SIZE === 25) {
+                root.style.setProperty('--pixel-size', '3vw');
+                root.style.setProperty('--pixel-max-size', '20px');
+                root.style.setProperty('--pixel-gap', '0.5vw');
+                root.style.setProperty('--pixel-max-gap', '5px');
+            } else if (GRID_SIZE === 50) {
+                 root.style.setProperty('--pixel-size', '1.5vw');
+                 root.style.setProperty('--pixel-max-size', '12px');
+                 root.style.setProperty('--pixel-gap', '0.3vw');
+                 root.style.setProperty('--pixel-max-gap', '3px');
+            } else if (GRID_SIZE === 100) {
+                 root.style.setProperty('--pixel-size', '0.7vw');
+                 root.style.setProperty('--pixel-max-size', '6px');
+                 root.style.setProperty('--pixel-gap', '0.15vw');
+                 root.style.setProperty('--pixel-max-gap', '2px');
+            }
+
+            // 清空并重建
+            gridContainer.innerHTML = '';
+            pixels = [];
+            pixelBaseColors = new Array(PIXEL_COUNT);
+
+            for (let i = 0; i < PIXEL_COUNT; i++) {
+                const pixel = document.createElement('div');
+                pixel.classList.add('pixel');
+                gridContainer.appendChild(pixel);
+                pixels.push(pixel);
+            }
+
+            // 更新分辨率按钮的激活状态
+            document.querySelectorAll('.resolution-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.size) === newSize);
+            });
+        }
+
+
+        /**
+         * 生成并应用对角线颜色方案
+         */
+        function generateDiagonalColors() {
+            const diagonalColors = [];
+            for (let i = 0; i < DIAGONAL_COUNT; i++) {
+                const hue = Math.random() * 360;
+                const saturation = 70 + Math.random() * 30;
+                const lightness = 55 + Math.random() * 10;
+                diagonalColors.push({ h: hue, s: saturation, l: lightness });
+            }
+
+            pixels.forEach((pixel, i) => {
+                const x = i % GRID_SIZE;
+                const y = Math.floor(i / GRID_SIZE);
+                const diagonalIndex = x + y;
+                pixelBaseColors[i] = diagonalColors[diagonalIndex];
+            });
+            applyColors();
+        }
+
+        /**
+         * 从图片中提取颜色并应用
+         */
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const tempCanvas = document.createElement('canvas');
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCanvas.width = GRID_SIZE;
+                    tempCanvas.height = GRID_SIZE;
+
+                    const size = Math.min(img.naturalWidth, img.naturalHeight);
+                    const sx = (img.naturalWidth - size) / 2;
+                    const sy = (img.naturalHeight - size) / 2;
+
+                    tempCtx.drawImage(img, sx, sy, size, size, 0, 0, GRID_SIZE, GRID_SIZE);
+
+                    const imageData = tempCtx.getImageData(0, 0, GRID_SIZE, GRID_SIZE).data;
+
+                    for (let i = 0; i < PIXEL_COUNT; i++) {
+                        const r = imageData[i * 4];
+                        const g = imageData[i * 4 + 1];
+                        const b = imageData[i * 4 + 2];
+                        pixelBaseColors[i] = rgbToHsl(r, g, b);
+                    }
+                    applyColors();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        /**
+         * 将颜色应用到像素点
+         */
+        function applyColors() {
+             pixels.forEach((pixel, i) => {
+                const baseColor = pixelBaseColors[i];
+                if (!baseColor) return;
+                const colorStr = `hsl(${baseColor.h}, ${baseColor.s}%, ${baseColor.l}%)`;
+                pixel.style.backgroundColor = colorStr;
+                // 为了简单，移除了光晕效果，可以加回来如果需要
+                // pixel.style.boxShadow = `0 0 5px 1px ${colorStr}`;
+            });
+        }
+
+        /**
+         * RGB转HSL颜色工具函数
+         */
+        function rgbToHsl(r, g, b) {
+            r /= 255; g /= 255; b /= 255;
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            let h, s, l = (max + min) / 2;
+
+            if (max === min) {
+                h = s = 0; // achromatic
+            } else {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                    case g: h = (b - r) / d + 2; break;
+                    case b: h = (r - g) / d + 4; break;
+                }
+                h /= 6;
+            }
+            return { h: h * 360, s: s * 100, l: l * 100 };
+        }
+
+        /**
+         * HSL转RGB颜色工具函数 (用于Canvas绘图)
+         */
+        function hslToRgb(h, s, l) {
+            s /= 100;
+            l /= 100;
+            let c = (1 - Math.abs(2 * l - 1)) * s,
+                x = c * (1 - Math.abs((h / 60) % 2 - 1)),
+                m = l - c / 2,
+                r = 0, g = 0, b = 0;
+
+            if (0 <= h && h < 60) {
+                r = c; g = x; b = 0;
+            } else if (60 <= h && h < 120) {
+                r = x; g = c; b = 0;
+            } else if (120 <= h && h < 180) {
+                r = 0; g = c; b = x;
+            } else if (180 <= h && h < 240) {
+                r = 0; g = x; b = c;
+            } else if (240 <= h && h < 300) {
+                r = x; g = 0; b = c;
+            } else if (300 <= h && h < 360) {
+                r = c; g = 0; b = x;
+            }
+            r = Math.round((r + m) * 255);
+            g = Math.round((g + m) * 255);
+            b = Math.round((b + m) * 255);
+
+            return [r, g, b];
+        }
+
+
+        /**
+         * 保存为PNG图片
+         */
+        function saveAsPng(includeBackground) {
+            const canvas = document.createElement('canvas');
+            
+            // 定义渲染的像素和间隙大小
+            const renderPixelSize = 10; 
+            const gapSize = Math.max(1, Math.floor(renderPixelSize * 0.2)); 
+
+            // 计算包含间隙和边缘填充的总画布尺寸
+            const totalWidth = (GRID_SIZE * renderPixelSize) + ((GRID_SIZE + 1) * gapSize);
+            const totalHeight = (GRID_SIZE * renderPixelSize) + ((GRID_SIZE + 1) * gapSize);
+
+            canvas.width = totalWidth;
+            canvas.height = totalHeight;
+            const ctx = canvas.getContext('2d');
+
+            // 绘制背景
+            if (includeBackground) {
+                // 先绘制外层大背景
+                ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
+                ctx.fillRect(0, 0, totalWidth, totalHeight);
+                // 再绘制内层网格的背景（模拟预览效果）
+                ctx.fillStyle = getComputedStyle(gridContainer).backgroundColor;
+                const gridPadding = gapSize; // 用gapSize模拟padding
+                ctx.fillRect(gridPadding/2, gridPadding/2, totalWidth - gridPadding, totalHeight - gridPadding);
+            } else {
+                ctx.clearRect(0, 0, totalWidth, totalHeight); // 透明背景
+            }
+
+            // 绘制像素
+            pixels.forEach((pixel, i) => {
+                const baseColor = pixelBaseColors[i];
+                if (!baseColor) return;
+
+                const x = i % GRID_SIZE;
+                const y = Math.floor(i / GRID_SIZE);
+
+                const [r, g, b] = hslToRgb(baseColor.h, baseColor.s, baseColor.l);
+                ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+
+                const drawX = gapSize + x * (renderPixelSize + gapSize);
+                const drawY = gapSize + y * (renderPixelSize + gapSize);
+                
+                // 模拟圆角矩形
+                const borderRadius = renderPixelSize * 0.2;
+                ctx.beginPath();
+                ctx.moveTo(drawX + borderRadius, drawY);
+                ctx.lineTo(drawX + renderPixelSize - borderRadius, drawY);
+                ctx.quadraticCurveTo(drawX + renderPixelSize, drawY, drawX + renderPixelSize, drawY + borderRadius);
+                ctx.lineTo(drawX + renderPixelSize, drawY + renderPixelSize - borderRadius);
+                ctx.quadraticCurveTo(drawX + renderPixelSize, drawY + renderPixelSize, drawX + renderPixelSize - borderRadius, drawY + renderPixelSize);
+                ctx.lineTo(drawX + borderRadius, drawY + renderPixelSize);
+                ctx.quadraticCurveTo(drawX, drawY + renderPixelSize, drawX, drawY + renderPixelSize - borderRadius);
+                ctx.lineTo(drawX, drawY + borderRadius);
+                ctx.quadraticCurveTo(drawX, drawY, drawX + borderRadius, drawY);
+                ctx.closePath();
+                ctx.fill();
+            });
+
+            const link = document.createElement('a');
+            link.download = `pixel-art-${GRID_SIZE}x${GRID_SIZE}-${includeBackground ? 'with-bg' : 'no-bg'}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+
+        // --- 事件监听 ---
+        randomizeBtn.addEventListener('click', generateDiagonalColors);
+        uploadBtn.addEventListener('click', () => imageUploader.click());
+        imageUploader.addEventListener('change', handleImageUpload);
+        resolutionControls.addEventListener('click', (e) => {
+            if (e.target.classList.contains('resolution-btn')) {
+                const newSize = parseInt(e.target.dataset.size);
+                if (newSize !== GRID_SIZE) {
+                    rebuildGrid(newSize);
+                    generateDiagonalColors(); // 重建后自动填充随机色
+                }
+            }
+        });
+        savePngWithBgBtn.addEventListener('click', () => saveAsPng(true));
+        savePngNoBgBtn.addEventListener('click', () => saveAsPng(false));
+
+
+        // --- 页面加载时, 初始化 ---
+        window.addEventListener('load', () => {
+            rebuildGrid(GRID_SIZE);
+            generateDiagonalColors();
+        });
+    </script>
+</body>
+</html>
+
